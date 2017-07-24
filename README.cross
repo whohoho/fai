@@ -1,0 +1,21 @@
+# cross chroot support
+
+
+
+## Setting up:
+
+apt-get install qemu binfmt-support qemu-user-static
+
+dpkg --add-architecture armhf
+apt-get update
+apt-get install libc6:armhf
+
+This should make chrooting into a cross architecture filesystem possible
+
+## building a arm image
+
+export DEBOOTSTRAP=stretch http://httpredir.debian.org/debian
+export CROSS=true
+export CROSS_ARCH=armhf
+
+fai-diskimage -S 8G -cDHCPC,DEBIAN,ARM,RPI /big/testarm4.raw 2>&1 | tee diskimagearm4.log
