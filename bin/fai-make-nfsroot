@@ -146,7 +146,15 @@ cfdir=$(readlink -f $cfdir) # canonicalize path
 oldnfsroot=$NFSROOT
 deldir=$NFSROOT
 
-ROOTCMD="chroot $NFSROOT"
+if [ "$CROSS" == "true" ]
+then
+	echo "crosschroot is enabled, using qemu-arm-static"
+#	[ -f "$NFSROOT/usr/bin/qemu-arm-static" ] || die 23 "No qemu-arm-static binary in nfsroot"
+	ROOTCMD="chroot $NFSROOT /usr/bin/qemu-arm-static "
+else
+	ROOTCMD="chroot $NFSROOT"
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -184,7 +192,11 @@ setclasses() {
 
     local iarch distro
     # Export all the information we have about the system
+    myarch=$(dpkg --print-architecture|tr /a-z/ /A-Z/)
     iarch=$($ROOTCMD dpkg --print-architecture|tr /a-z/ /A-Z/)
+#    if $myarch != $iarch
+#	    echo "architecture is different my: $myarch other: $iarch"
+
     distro=$(. $NFSROOT/etc/os-release; echo ${ID} ${ID}_${VERSION_ID} | tr '[:lower:].' '[:upper:]_')
     export classes="NFSROOT $iarch $distro"
     if [ X$verbose = X1 ] ; then
@@ -248,16 +260,36 @@ call_debootstrap() {
     fi
     local dversion=$(dpkg -l debootstrap | awk '/debootstrap/ {print $3}')
     echo "Creating base system using debootstrap version $dversion"
-    echo "Calling debootstrap $FAI_DEBOOTSTRAP_OPTS $1 $NFSROOT $2"
-    LC_ALL=C call_verbose debootstrap $FAI_DEBOOTSTRAP_OPTS $1 $NFSROOT $2
-    if [ $? -ne 0 ]; then
-        echo "ERROR: debootstrap did not complete successfully."
-        echo "This is mostly caused by a broken mirror."
-        echo "Please check your mirror or use an official mirror."
-        [ X$verbose = X1 ] || echo "Call fai-make-nfsroot -v for better debugging."
-        exit 10
-    fi
+  #+ debootstrap --exclude=info --include=aptitude --arch armhf stretch /srv/fai/nfsroot-armhf http://httpredir.debian.org/debian
 
+    if [ $CROSS == 'true' ] 
+    then
+	    echo "we are cross bootstrapping, and will do a 2 stage debootstrap"
+	    echo "Calling first stage debootstrap $FAI_DEBOOTSTRAP_OPTS $1 $NFSROOT $2"
+	    LC_ALL=C call_verbose debootstrap --foreign $FAI_DEBOOTSTRAP_OPTS $1 $NFSROOT $2
+	    if [ $? -ne 0 ]; then
+		echo "ERROR: first stage debootstrap did not complete successfully."
+		echo "This is mostly caused by a broken mirror."
+		echo "Please check your mirror or use an official mirror."
+		[ X$verbose = X1 ] || echo "Call fai-make-nfsroot -v for better debugging."
+		exit 10
+	    fi
+	    echo "copying qemu-static to chroot"
+	    cp /usr/bin/qemu-arm-static $NFSROOT/usr/bin
+	    echo "running second stage debootstrap"
+	    chroot $NFSROOT /bin/bash /debootstrap/debootstrap --second-stage $FAI_DEBOOTSTRAP_OPTS
+    else
+
+	    echo "Calling debootstrap $FAI_DEBOOTSTRAP_OPTS $1 $NFSROOT $2"
+	    LC_ALL=C call_verbose debootstrap $FAI_DEBOOTSTRAP_OPTS $1 $NFSROOT $2
+	    if [ $? -ne 0 ]; then
+		echo "ERROR: debootstrap did not complete successfully."
+		echo "This is mostly caused by a broken mirror."
+		echo "Please check your mirror or use an official mirror."
+		[ X$verbose = X1 ] || echo "Call fai-make-nfsroot -v for better debugging."
+		exit 10
+	    fi
+    fi
     if [ ! -f $NFSROOT/usr/bin/apt-get ]; then
         echo "No apt-get executable available inside the NFSROOT."
         echo "Maybe debootstrap did not finish successfully. Aborting."
