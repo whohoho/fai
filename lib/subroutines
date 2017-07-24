@@ -897,8 +897,29 @@ call_debootstrap() {
 
     local dversion=$(dpkg -l debootstrap | grep debootstrap | cut -f7 -d' ')
     echo "Creating base system using debootstrap version $dversion"
-    echo "Calling debootstrap $FAI_DEBOOTSTRAP_OPTS $1 $FAI_ROOT $2"
-    LC_ALL=C debootstrap $FAI_DEBOOTSTRAP_OPTS $1 $FAI_ROOT $2
+    if [ $CROSS == 'true' ] 
+    then
+	    CROSS_ARCH='armhf'
+	    echo "we are cross bootstrapping, and will do a 2 stage debootstrap"
+	    echo "Calling first stage debootstrap"
+	    env >> /tmp/call_debootstrap.env
+	    echo "FAI_DEBOOTSTRAP_OPTS: $FAI_DEBOOTSTRAP_OPTS CROSS_ARCH: $CROSS_ARCH FAI_ROOT: $FAI_ROOT 1: $1 2: $2"
+	    LC_ALL=C debootstrap --foreign --arch $CROSS_ARCH  $FAI_DEBOOTSTRAP_OPTS $1 $FAI_ROOT $2
+
+	    echo "copying qemu-static to chroot"
+	    cp /usr/bin/qemu-arm-static $FAI_ROOT/usr/bin
+
+	    echo "running second stage debootstrap"
+	    #LC_ALL=C chroot $FAI_ROOT /usr/bin/qemu-arm-static /debootstrap/debootstrap --arch $CROSS_ARCH --second-stage $FAI_DEBOOTSTRAP_OPTS
+	    # LC_ALL=C $FAI_ROOT/debootstrap/debootstrap --arch $CROSS_ARCH --second-stage $FAI_DEBOOTSTRAP_OPTS
+	     chroot $FAI_ROOT ./debootstrap/debootstrap --arch armhf --second-stage stretch
+	   env 
+	    echo "finished second stage debootstrap"
+
+    else
+    	echo "Calling debootstrap $FAI_DEBOOTSTRAP_OPTS $1 $FAI_ROOT $2"
+        LC_ALL=C debootstrap $FAI_DEBOOTSTRAP_OPTS $1 $FAI_ROOT $2
+    fi
 }
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### BEGIN SUBROUTINE INFO
